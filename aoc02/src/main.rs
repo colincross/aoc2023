@@ -74,7 +74,6 @@ fn main() {
              .lines()
              .map(String::from)
              .map(max_seen)
-             .map(|pair: (u32, Blocks)| valid(pair.0, pair.1, &blocks_in_bag))
-             .sum::<u32>()
+             .fold(0, |n: u32, pair: (u32, Blocks)| n + pair.1.n.iter().product::<u32>())
             );
 }
