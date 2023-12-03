@@ -1,8 +1,10 @@
 use regex::Regex;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::env;
 use std::fs::read_to_string;
 
-#[derive(Default, Debug, Clone)]
+#[derive(Default, Debug, Clone, Copy)]
 struct PartNumber<'a> {
     row: usize,
     col: usize,
@@ -12,6 +14,12 @@ struct PartNumber<'a> {
 
 struct Grid<'a> {
     rows: Vec<&'a str>,
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+struct Point {
+    row: usize,
+    col: usize,
 }
 
 struct GridIterator<'a> {
@@ -45,8 +53,7 @@ impl<'a> GridIterator<'a> {
 }
 
 impl<'a> Iterator for GridIterator<'a> {
-    // we will be counting with usize
-    type Item = char;
+    type Item = (Point, char);
 
     // next() is the only required method
     fn next(&mut self) -> Option<Self::Item> {
@@ -73,7 +80,8 @@ impl<'a> Iterator for GridIterator<'a> {
             None
         } else {
             let c = self.grid.rows[self.row as usize].chars().nth(self.col as usize).unwrap();
-            Some(c)
+            let point = Point{ row: self.row as usize, col: self.col as usize };
+            Some((point, c))
         }
     }
 }
@@ -109,12 +117,12 @@ fn find_part_numbers(row: usize, s: &str) -> Vec<PartNumber> {
         .collect()
 }
 
-fn has_adjacent_symbols(p: &PartNumber, grid: &Grid) -> bool {
-    let adjacent = grid
+fn adjacent_gears(p: &PartNumber, grid: &Grid) -> Vec<Point> {
+    grid
         .around(p.row, p.col, p.s.len())
-        .any(|c| !c.is_ascii_digit() && c != '.');
-
-    adjacent
+        .filter(|pair: &(Point, char)| pair.1 == '*')
+        .map(|pair: (Point, char)| pair.0)
+        .collect()
 }
     
 fn main() {
@@ -123,14 +131,28 @@ fn main() {
     let data = read_to_string(&filename).unwrap();
     let grid = Grid::new(data.as_str());
 
-    println!("{:#?}",
+    let grid_dict =
              grid.rows
              .iter()
              .zip(0..)
-             .map(|pair: (&&str, usize)| find_part_numbers(pair.1, pair.0))
+             .map(|(s, row): (&&str, usize)| find_part_numbers(row, s))
              .flatten()
-             .filter(|part_number| has_adjacent_symbols(part_number, &grid))
-             .map(|part_number| part_number.n)
-             .sum::<u32>()
-            );
-}
+             .map(|part_number| (part_number, adjacent_gears(&part_number, &grid)))
+             .fold(HashMap::new(),
+                   |mut dict: HashMap<Point, Vec<PartNumber>>, (part_number, gears): (PartNumber, Vec<Point>)| {
+                       gears.iter().for_each(|gear| {
+                           match dict.entry(*gear) {
+                               Entry::Vacant(e) => { e.insert(vec![part_number]); },
+                               Entry::Occupied(mut e) => { e.get_mut().push(part_number); }
+                           }
+                       });
+                       dict
+                   });
+
+    println!("{}",
+        grid_dict
+            .iter()
+            .filter(|(_gear, part_numbers): &(&Point, &Vec<PartNumber>)| part_numbers.len() == 2)
+            .map(|(_gear, part_numbers): (&Point, &Vec<PartNumber>)| part_numbers[0].n * part_numbers[1].n)
+            .sum::<u32>());
+    }
