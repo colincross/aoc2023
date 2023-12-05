@@ -2,6 +2,8 @@ use std::env;
 use std::fs::read_to_string;
 use std::iter::Peekable;
 
+use rayon::prelude::*;
+
 #[derive(Debug)]
 struct Mapping {
     dest: u64,
@@ -71,6 +73,14 @@ fn parse_maps<'a>(lines: &'a mut Peekable<std::str::Lines<'a>>) -> Vec<Map<'a>> 
     maps
 }
 
+fn min_of_range(maps: &Vec<Map>, start: u64, size: u64) -> u64 {
+    let range = start..start+size;
+    range.into_par_iter()
+        .map(|s| do_map(&maps, s))
+        .min()
+        .unwrap()
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = args[1].as_str();
@@ -83,14 +93,19 @@ fn main() {
         .strip_prefix("seeds: ").unwrap()
         .split_ascii_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
-        .collect();
+        .collect::<Vec<u64>>();
+
+    dbg!(&starting_seeds);
 
     lines.next();
 
     let maps = parse_maps(&mut lines);
-    let locations: Vec<u64> = starting_seeds
-        .iter()
-        .map(|s| do_map(&maps, *s))
-        .collect();
-    println!("{}", locations.iter().min().unwrap());
+    println!("{}",
+             starting_seeds
+             .chunks(2)
+             .collect::<Vec<&[u64]>>()
+             .into_par_iter()
+             .map(|r| min_of_range(&maps, r[0], r[1]))
+             .min()
+             .unwrap());
 }
