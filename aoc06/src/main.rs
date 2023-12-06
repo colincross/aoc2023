@@ -29,12 +29,14 @@ fn main() {
     let times: Vec<u64> = lines
         .next().unwrap()
         .strip_prefix("Time:").unwrap()
+        .replace(" ", "")
         .split_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
         .collect();
     let distances: Vec<u64> = lines
         .next().unwrap()
         .strip_prefix("Distance:").unwrap()
+        .replace(" ", "")
         .split_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
         .collect();
