@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::env;
 use std::fs::read_to_string;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Hand {
     cards: [u8; 5],
     card_counts: Vec<CardCount>,
     bid: u64,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 struct CardCount {
     count: usize,
     card: u8,
@@ -55,15 +55,34 @@ impl Hand {
         Self{ cards, card_counts, bid }
     }
 
+    fn copy_with_replace(&self, pos: usize, replace: u8) -> Self {
+        let mut cards = self.cards.clone();
+        let bid = self.bid;
+        cards[pos] = replace;
+        
+        let mut cards_count_map: HashMap<u8, usize> = Default::default();
+        for (i, c) in cards.iter().enumerate() {
+            *cards_count_map.entry(*c).or_insert(0) += 1;
+        }
+
+        let mut card_counts: Vec<CardCount> = cards_count_map
+            .iter()
+            .map(|(card, count)| CardCount{ card: *card, count: *count })
+            .collect();
+        card_counts.sort();
+
+        Self{ cards, card_counts, bid }
+    }
+
     fn card_char_to_int(c: char) -> u8 {
         match c {
             '2'..='9' => c.to_digit(10).unwrap() as u8,
             'T' => 10,
-            'J' => 11,
-            'Q' => 12,
-            'K' => 13,
-            'A' => 14,
-            _ => 0,
+            'Q' => 11,
+            'K' => 12,
+            'A' => 13,
+            'J' => 1,
+            _ => panic!(),
         }
     }
     
@@ -108,7 +127,7 @@ impl Hand {
         self.card_counts.len() == 5
     }
 
-    fn value(&self) -> u64 {
+    fn hand_value(&self) -> u64 {
         let v: u64 = if self.is_high_card() { 1 }
         else if self.is_one_pair() { 2 }
         else if self.is_two_pair() { 3 }
@@ -117,8 +136,11 @@ impl Hand {
         else if self.is_four_of_a_kind() { 6 }
         else if self.is_five_of_a_kind() { 7 }
         else { dbg!(&self); panic!() };
+        v << (5*8)
+    }
 
-        let n = (v << (5*8))
+    fn card_value(&self) -> u64 {
+        let n = 0
             + ((self.cards[0] as u64) << (4*8))
             + ((self.cards[1] as u64) << (3*8))
             + ((self.cards[2] as u64) << (2*8))
@@ -126,6 +148,39 @@ impl Hand {
             + ((self.cards[4] as u64) << (0*8));
 
         n
+    }
+
+    fn joker_value(&self) -> u64 {
+        self.joker_expand().iter().map(|hand| hand.hand_value() + self.card_value()).max().unwrap()
+    }
+
+    fn joker_expand_pos(hand: &Hand, pos: usize) -> Vec<Hand> {
+        (2..=13)
+            .map(|c| hand.copy_with_replace(pos, c as u8))
+            .collect()
+    }
+            
+    fn joker_expand_recurse(hands: Vec<Hand>) -> Vec<Hand> {
+        let mut ret: Vec<Hand> = Default::default();
+
+        for hand in hands.iter() {
+            let pos = hand.cards.iter().position(|c| *c == 1);
+            let mut new_hands = match pos {
+                Some(x) => Self::joker_expand_recurse(Self::joker_expand_pos(hand, x)),
+                None => vec![hand.clone()],
+            };
+            ret.append(&mut new_hands);
+        }
+
+         ret
+    }
+
+    fn joker_expand(&self) -> Vec<Hand> {
+        let ret: Vec<Hand> = Self::joker_expand_recurse(vec![self.clone()]);
+
+        //dbg!(self, &ret);
+
+        ret
     }
 }
 
@@ -139,7 +194,7 @@ fn main() {
         .map(Hand::new)
         .collect();
 
-    hands.sort_by_cached_key(|hand| hand.value());
+    hands.sort_by_cached_key(|hand| hand.joker_value());
     
     //dbg!(&hands);
 
