@@ -33,6 +33,13 @@ impl Sequence {
             false => self.values.last().unwrap() + self.diff().extrapolate(),
         }
     }
+
+    fn extrapolate_previous(&self) -> i64 {
+        match self.all_zero() {
+            true => 0,
+            false => self.values.first().unwrap() - self.diff().extrapolate_previous(),
+        }
+    }
 }
 
 fn main() {
@@ -49,6 +56,6 @@ fn main() {
     println!("{}",
              sequences
              .iter()             
-             .map(|seq| seq.extrapolate())
+             .map(|seq| seq.extrapolate_previous())
              .sum::<i64>());
 }
