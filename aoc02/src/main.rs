@@ -1,7 +1,7 @@
+use regex::Regex;
 use std::cmp::max;
 use std::env;
 use std::fs::read_to_string;
-use regex::Regex;
 
 #[derive(Default)]
 struct Blocks {
@@ -49,7 +49,7 @@ fn max_seen(s: String) -> (u32, Blocks) {
         .fold(Blocks::default(), |a: Blocks, b: Blocks| Blocks::max(a, &b));
 
     return (id, max_blocks);
-}       
+}
 
 fn valid(id: u32, blocks: Blocks, blocks_in_bag: &Blocks) -> u32 {
     for (i, num) in blocks.n.iter().enumerate() {
@@ -60,7 +60,7 @@ fn valid(id: u32, blocks: Blocks, blocks_in_bag: &Blocks) -> u32 {
 
     return id;
 }
-    
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = args[1].as_str();
@@ -68,12 +68,17 @@ fn main() {
     let maxg = args[3].parse::<u32>().unwrap();
     let maxb = args[4].parse::<u32>().unwrap();
     let blocks_in_bag = Blocks::new([maxr, maxg, maxb]);
-    println!("{}",
+    println!(
+        "{}",
         read_to_string(&filename)
-             .unwrap()
-             .lines()
-             .map(String::from)
-             .map(max_seen)
-             .fold(0, |n: u32, pair: (u32, Blocks)| n + pair.1.n.iter().product::<u32>())
-            );
+            .unwrap()
+            .lines()
+            .map(String::from)
+            .map(max_seen)
+            .fold(0, |n: u32, pair: (u32, Blocks)| n + pair
+                .1
+                .n
+                .iter()
+                .product::<u32>())
+    );
 }

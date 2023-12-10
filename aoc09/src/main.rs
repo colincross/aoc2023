@@ -16,7 +16,8 @@ impl Sequence {
     }
 
     fn diff(&self) -> Self {
-        let values: Vec<i64> = self.values
+        let values: Vec<i64> = self
+            .values
             .windows(2)
             .map(|v: &[i64]| v[1] - v[0])
             .collect();
@@ -26,7 +27,7 @@ impl Sequence {
     fn all_zero(&self) -> bool {
         self.values.iter().all(|v| *v == 0)
     }
-    
+
     fn extrapolate(&self) -> i64 {
         match self.all_zero() {
             true => 0,
@@ -49,13 +50,13 @@ fn main() {
 
     let lines = data.lines();
 
-    let sequences: Vec<Sequence> = lines
-        .map(Sequence::new)
-        .collect();
+    let sequences: Vec<Sequence> = lines.map(Sequence::new).collect();
 
-    println!("{}",
-             sequences
-             .iter()             
-             .map(|seq| seq.extrapolate_previous())
-             .sum::<i64>());
+    println!(
+        "{}",
+        sequences
+            .iter()
+            .map(|seq| seq.extrapolate_previous())
+            .sum::<i64>()
+    );
 }

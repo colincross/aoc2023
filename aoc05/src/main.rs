@@ -21,7 +21,7 @@ impl Mapping {
     }
 
     fn map(&self, n: u64) -> Option<u64> {
-        if n >= self.src && n < self.src+self.size {
+        if n >= self.src && n < self.src + self.size {
             return Some(self.dest + (n - self.src));
         } else {
             return None;
@@ -65,17 +65,16 @@ fn parse_maps<'a>(lines: &'a mut Peekable<std::str::Lines<'a>>) -> Vec<Map<'a>> 
     let mut maps: Vec<Map> = Vec::new();
     while lines.peek() != None {
         let map_header = lines.next().unwrap();
-        let map_lines: Vec<&str> = lines
-            .take_while(|l| !l.is_empty())
-            .collect();
+        let map_lines: Vec<&str> = lines.take_while(|l| !l.is_empty()).collect();
         maps.push(Map::new(map_header, map_lines));
     }
     maps
 }
 
 fn min_of_range(maps: &Vec<Map>, start: u64, size: u64) -> u64 {
-    let range = start..start+size;
-    range.into_par_iter()
+    let range = start..start + size;
+    range
+        .into_par_iter()
         .map(|s| do_map(&maps, s))
         .min()
         .unwrap()
@@ -89,8 +88,10 @@ fn main() {
     let mut lines = data.lines().peekable();
 
     let starting_seeds: Vec<u64> = lines
-        .next().unwrap()
-        .strip_prefix("seeds: ").unwrap()
+        .next()
+        .unwrap()
+        .strip_prefix("seeds: ")
+        .unwrap()
         .split_ascii_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
         .collect::<Vec<u64>>();
@@ -100,12 +101,14 @@ fn main() {
     lines.next();
 
     let maps = parse_maps(&mut lines);
-    println!("{}",
-             starting_seeds
-             .chunks(2)
-             .collect::<Vec<&[u64]>>()
-             .into_par_iter()
-             .map(|r| min_of_range(&maps, r[0], r[1]))
-             .min()
-             .unwrap());
+    println!(
+        "{}",
+        starting_seeds
+            .chunks(2)
+            .collect::<Vec<&[u64]>>()
+            .into_par_iter()
+            .map(|r| min_of_range(&maps, r[0], r[1]))
+            .min()
+            .unwrap()
+    );
 }

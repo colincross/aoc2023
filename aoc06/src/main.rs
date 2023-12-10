@@ -8,15 +8,16 @@ struct Race {
 
 impl Race {
     fn new(time: u64, distance: u64) -> Self {
-        Self{ time, distance }
+        Self { time, distance }
     }
 
     fn count_wins(&self) -> u64 {
-        (1..(self.time-1))
-            .map(|t| t*(self.time-t))
+        (1..(self.time - 1))
+            .map(|t| t * (self.time - t))
             .filter(|t| *t > self.distance)
             .count()
-            .try_into().unwrap()
+            .try_into()
+            .unwrap()
     }
 }
 
@@ -27,28 +28,29 @@ fn main() {
     let mut lines = data.lines();
 
     let times: Vec<u64> = lines
-        .next().unwrap()
-        .strip_prefix("Time:").unwrap()
+        .next()
+        .unwrap()
+        .strip_prefix("Time:")
+        .unwrap()
         .replace(" ", "")
         .split_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
         .collect();
     let distances: Vec<u64> = lines
-        .next().unwrap()
-        .strip_prefix("Distance:").unwrap()
+        .next()
+        .unwrap()
+        .strip_prefix("Distance:")
+        .unwrap()
         .replace(" ", "")
         .split_whitespace()
         .map(|s| s.parse::<u64>().unwrap())
         .collect();
 
-    let races: Vec<Race> = times.iter()
+    let races: Vec<Race> = times
+        .iter()
         .zip(distances.iter())
         .map(|(time, distance)| Race::new(*time, *distance))
         .collect();
 
-    println!("{}",
-             races
-             .iter()
-             .map(|r| r.count_wins())
-             .product::<u64>());
+    println!("{}", races.iter().map(|r| r.count_wins()).product::<u64>());
 }

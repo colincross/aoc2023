@@ -1,7 +1,9 @@
 use std::env;
 use std::fs::read_to_string;
 
-const SPELLED_DIGITS: [&str; 10] = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const SPELLED_DIGITS: [&str; 10] = [
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+];
 
 fn first_digit(s: &String) -> u32 {
     let mut digit = 0;
@@ -33,7 +35,7 @@ fn first_digit(s: &String) -> u32 {
 fn last_digit(s: &String) -> u32 {
     let mut digit = 0;
     let mut digit_location: i32 = -1;
-    
+
     for (i, c) in s.chars().rev().enumerate() {
         if c.is_ascii_digit() {
             digit = c.to_digit(10).unwrap();
@@ -58,19 +60,20 @@ fn last_digit(s: &String) -> u32 {
 }
 
 fn first_and_last_digits(s: String) -> u32 {
-    let num = first_digit(&s)*10 + last_digit(&s);
+    let num = first_digit(&s) * 10 + last_digit(&s);
     println!("{}: {}", s, num);
     return num;
 }
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    println!("{}",
+    println!(
+        "{}",
         read_to_string(&args[1])
-             .unwrap()
-             .lines()
-             .map(String::from)
-             .map(first_and_last_digits)
-             .sum::<u32>()
-            );
+            .unwrap()
+            .lines()
+            .map(String::from)
+            .map(first_and_last_digits)
+            .sum::<u32>()
+    );
 }
