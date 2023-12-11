@@ -1,4 +1,5 @@
 use std::{env, ops};
+use std::cmp::Ordering;
 use std::fs::read_to_string;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
@@ -7,7 +8,7 @@ struct Pos {
     col: i64,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 struct Dir {
     row: i64,
     col: i64,
@@ -20,7 +21,19 @@ impl Dir {
     const WEST: Self = Self { row: 0, col: -1 };
     const NONE: Self = Self { row: 0, col: 0 };
 
-    const DIRECTIONS: [Self; 4] = [Self::NORTH, Self::SOUTH, Self::EAST, Self::WEST];
+    const DIRECTIONS: [Self; 4] = [Self::NORTH, Self::EAST, Self::SOUTH, Self::WEST];
+}
+
+impl Ord for Dir {
+    fn cmp(&self, other: &Self) -> Ordering {
+        (self.row * 2 + self.col).cmp(&(other.row * 2 + other.col))
+    }
+}
+
+impl PartialOrd for Dir {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl ops::Add<&Dir> for &Pos {
@@ -41,14 +54,29 @@ impl Tile {
     fn connected(&self) -> [Dir; 2] {
         match self.c {
             '|' => [Dir::NORTH, Dir::SOUTH],
-            '-' => [Dir::WEST, Dir::EAST],
+            '-' => [Dir::EAST, Dir::WEST],
             'L' => [Dir::NORTH, Dir::EAST],
             'J' => [Dir::NORTH, Dir::WEST],
-            '7' => [Dir::WEST, Dir::SOUTH],
+            '7' => [Dir::SOUTH, Dir::WEST],
             'F' => [Dir::EAST, Dir::SOUTH],
             '.' => [Dir::NONE, Dir::NONE],
             _ => panic!(),
         }
+    }
+
+    fn from_dirs(dirs: [Dir; 2]) -> Self {
+        dbg!(&dirs);
+        let c = match dirs {
+            [Dir::NORTH, Dir::SOUTH] => '|',
+            [Dir::EAST, Dir::WEST] => '-',
+            [Dir::NORTH, Dir::EAST] => 'L',
+            [Dir::NORTH, Dir::WEST] => 'J',
+            [Dir::SOUTH, Dir::WEST] => '7',
+            [Dir::EAST, Dir::SOUTH] => 'F',
+            [Dir::NONE, Dir::NONE] => '.',
+            _ => panic!(),
+        };
+        Self { c }
     }
 }
 
@@ -99,11 +127,14 @@ impl Grid {
         Pos { row: row_col.0 as i64, col: row_col.1.unwrap().0 as i64 }
     }
 
-    fn find_start_dir(&self, start: &Pos) -> &Dir {
-        Dir::DIRECTIONS
+    fn find_start_dirs(&self, start: &Pos) -> [Dir; 2] {
+        let mut dirs = Dir::DIRECTIONS
             .iter()
-            .find(|dir| self.follow_pipe(&start, &(start + *dir)).is_some())
-            .unwrap()
+            .filter(|dir| self.follow_pipe(&start, &(start + *dir)).is_some())
+            .collect::<Vec<&Dir>>();
+        dirs.sort();
+        assert!(dirs.len() == 2);
+        [*dirs[0], *dirs[1]]
     }
 
     fn at(&self, pos: &Pos) -> Option<Tile> {
@@ -201,36 +232,50 @@ fn main() {
 
     let start = grid.find_start();
 
-    let start_dir = grid.find_start_dir(&start);
+    let start_dirs = grid.find_start_dirs(&start);
+    let start_dir = &start_dirs[0];
 
     let pipe_positions = grid.collect_pipe(&start, start_dir);
 
     let mut grid_mark = grid.empty_copy();
     for pos in pipe_positions {
-        grid_mark.set(&pos, '*')
+        grid_mark.set(&pos, grid.at(&pos).unwrap().c);
     }
+    grid_mark.set(&start, Tile::from_dirs(start_dirs).c);
     println!("{}", &grid_mark.to_string());
 
+    let mut count = 0;
     for row in 0..grid_mark.rows {
+        let mut last_corner = '.';
+        let mut inside = false;
         for col in 0..grid_mark.cols {
             let pos = Pos { row: row as i64, col: col as i64 };
-            if grid_mark.at(&pos).unwrap().c == '.' {
-                let connected = grid_mark.collect_connected(&pos);
-                if connected
-                    .iter()
-                    .find(|pos| pos.row == 0
-                        || pos.row as usize == grid_mark.rows - 1
-                        || pos.col == 0
-                        || pos.col as usize == grid_mark.cols - 1)
-                    .is_some() {
-                    grid_mark.set_all(&connected, 'O');
-                } else {
-                    grid_mark.set_all(&connected, 'I');
+            let is_floor = grid_mark.at(&pos).unwrap().c == '.';
+            if is_floor && inside {
+                count += 1;
+            } else {
+                let c = grid_mark.at(&pos).unwrap().c;
+                if c == '|' {
+                    inside = !inside;
+                } else if c == 'J' {
+                    dbg!(pos, grid_mark.at(&pos).unwrap().c);
+                    assert!(last_corner == 'F' || last_corner == 'L');
+                    if last_corner == 'F' {
+                        inside = !inside;
+                    }
+                } else if c == 'F' {
+                    last_corner = 'F';
+                } else if c == 'L' {
+                    last_corner = 'L';
+                } else if c == '7' {
+                    assert!(last_corner == 'F' || last_corner == 'L');
+                    if last_corner == 'L' {
+                        inside = !inside;
+                    }
                 }
             }
         }
     }
-    println!("{}", &grid_mark.to_string());
 
-    println!("{}", grid_mark.count('I'));
+    println!("{}", count);
 }
