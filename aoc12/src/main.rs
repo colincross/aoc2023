@@ -5,89 +5,82 @@ use std::fs::read_to_string;
 struct Row {
     springs: Vec<char>,
     broken_counts: Vec<usize>,
-    unknown_locations: Vec<usize>,
-    missing_broken: usize,
+    total_broken: usize,
 }
 
 #[derive(Clone, Debug)]
 struct Answer<'a> {
     row: &'a Row,
-    answers: Vec<char>,
-    broken_count: usize,
+    gaps: Vec<usize>,
+    total_gaps: usize,
+}
+
+struct Memo {
+    failing_sums: Vec<Vec<Option<usize>>>,
+}
+
+impl Memo {
+    fn new(gaps: usize, row_length: usize) -> Self {
+        Self {
+            failing_sums: vec![vec![None; row_length]; gaps + 1]
+        }
+    }
+    fn memoize_count(&mut self, answer: &Answer, count: usize) {
+        self.failing_sums[answer.gaps.len()][answer.gaps.iter().sum::<usize>()] = Some(count)
+    }
+
+    fn reuse_count(&self, answer: &Answer) -> Option<usize> {
+        self.failing_sums[answer.gaps.len()][answer.gaps.iter().sum::<usize>()]
+    }
 }
 
 impl<'a> Answer<'a> {
     fn empty(row: &'a Row) -> Self {
         Self {
             row,
-            answers: Default::default(),
-            broken_count: 0,
+            gaps: Default::default(),
+            total_gaps: 0,
         }
     }
 
-    fn valid(&self) -> bool {
-        if self.broken_count != self.row.missing_broken {
-            return false;
+    fn valid(&self) -> Option<bool> {
+        let mut offset = 0;
+        if self.total_gaps + self.row.total_broken > self.row.springs.len() {
+            return Some(false);
         }
-        let mut answers = self.answers.iter();
-        let springs = self.row.springs
-            .iter()
-            .map(|c| match c {
-                '#' => '#',
-                '.' => '.',
-                '?' => *(answers.next().unwrap_or(&'?')),
-                _ => panic!(),
-            })
-            .collect::<Vec<_>>();
-
-        //let springs_str = springs.iter().collect::<String>();
-        //dbg!(&springs_str);
-
-        let mut springs_index = 0;
-        let mut broken_count_index = 0;
-        while springs_index < springs.len() && broken_count_index < self.row.broken_counts.len() {
-            if springs[springs_index] == '#' {
-                let expected_count = self.row.broken_counts[broken_count_index];
-                if springs_index + expected_count > springs.len() {
-                    return false;
-                }
-                if springs[springs_index..springs_index + expected_count]
-                    .iter()
-                    .any(|c| *c != '#' && *c != '?') {
-                    return false;
-                }
-                if springs_index + expected_count < springs.len() {
-                    let next_c = springs[springs_index + expected_count];
-                    if next_c != '.' && next_c != '?' {
-                        return false;
-                    }
-                }
-                springs_index += expected_count + 1;
-                broken_count_index += 1;
-            } else {
-                springs_index += 1;
+        for (i, gap) in self.gaps.iter().enumerate() {
+            if self.row.springs[offset..offset + gap]
+                .iter()
+                .any(|c| *c == '#') {
+                return Some(false);
             }
+            offset += gap;
+            let filled = self.row.broken_counts[i];
+            if self.row.springs[offset..offset + filled]
+                .iter()
+                .any(|c| *c == '.') {
+                return Some(false);
+            }
+            offset += filled;
         }
-        true
+        if self.gaps.len() == self.row.broken_counts.len() {
+            if self.row.springs[offset..self.row.springs.len()]
+                .iter()
+                .any(|c| *c == '#') {
+                return Some(false);
+            }
+            return Some(true);
+        }
+        return None;
     }
 
-    fn add_broken(&self) -> Self {
-        let mut answers = self.answers.clone();
-        answers.push('#');
+    fn add_gap(&self, gap: usize) -> Self {
+        let mut gaps = self.gaps.clone();
+        gaps.push(gap);
         Self {
             row: self.row,
-            answers,
-            broken_count: self.broken_count + 1,
-        }
-    }
-
-    fn add_not_broken(&self) -> Self {
-        let mut answers = self.answers.clone();
-        answers.push('.');
-        Self {
-            row: self.row,
-            answers,
-            broken_count: self.broken_count,
+            gaps,
+            total_gaps: self.total_gaps + gap,
         }
     }
 }
@@ -96,45 +89,55 @@ impl Row {
     fn new(line: &str) -> Self {
         let words = line.split_whitespace().collect::<Vec<_>>();
 
-        let springs = words[0].chars().collect::<Vec<_>>();
+        let repeat = 5;
+
+        let springs = vec![words[0]; repeat].join("?")
+            .chars().collect::<Vec<_>>();
 
         let broken_counts = words[1]
             .split(",")
             .map(|s| s.parse::<usize>().unwrap())
-            .collect::<Vec<_>>();
+            .collect::<Vec<_>>()
+            .repeat(repeat);
 
         let total_broken = broken_counts.iter().sum::<usize>();
-        let have_broken = springs.iter().filter(|c| **c == '#').count();
-        let missing_broken = total_broken - have_broken;
 
-        let unknown_locations = springs
-            .iter()
-            .enumerate()
-            .filter(|(_i, c)| **c == '?')
-            .map(|(i, _c)| i)
-            .collect::<Vec<_>>();
-
-        Self { springs, broken_counts, unknown_locations, missing_broken }
+        Self { springs, broken_counts, total_broken }
     }
 
 
-    fn recurse(&self, answer: Answer) -> usize {
-        if answer.answers.len() == self.unknown_locations.len() {
-            return match answer.valid() {
-                true => 1,
-                false => 0,
-            };
+    fn recurse(&self, answer: &Answer, memo: &mut Memo) -> usize {
+        let reuse = memo.reuse_count(answer);
+        if reuse.is_some() {
+            return reuse.unwrap();
         }
+
+        let valid = answer.valid();
+        if valid.is_some() {
+            if valid.unwrap() {
+                memo.memoize_count(answer, 1);
+                return 1;
+            } else {
+                return 0;
+            }
+        }
+
         let mut count: usize = 0;
-        if answer.broken_count < self.missing_broken {
-            count += self.recurse(answer.add_broken());
+        for gap in 0..=self.springs.len() - self.total_broken - answer.total_gaps {
+            if gap == 0 && answer.gaps.len() > 0 {
+                continue;
+            }
+            count += self.recurse(&answer.add_gap(gap), memo);
         }
-        count += self.recurse(answer.add_not_broken());
+        memo.memoize_count(answer, count);
         return count;
     }
 
     fn combos(&self) -> usize {
-        self.recurse(Answer::empty(self))
+        let mut memo = Memo::new(self.broken_counts.len(), self.springs.len());
+        let combos = self.recurse(&Answer::empty(self), &mut memo);
+        dbg!(combos);
+        combos
     }
 }
 
