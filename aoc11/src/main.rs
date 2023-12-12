@@ -36,7 +36,7 @@ impl Grid {
             .collect::<Vec<_>>()
     }
 
-    fn expand(&self) -> Self {
+    fn expand(&self) -> (Vec<usize>, Vec<usize>) {
         let empty_rows: Vec<usize> = self.grid
             .iter()
             .enumerate()
@@ -67,7 +67,7 @@ impl Grid {
             cols += 1
         }
 
-        Self { grid, rows, cols }
+        (empty_rows, empty_cols)
     }
 
 
@@ -103,7 +103,9 @@ fn main() {
     let filename = args[1].as_str();
     let data = read_to_string(&filename).unwrap();
 
-    let grid = Grid::new(&data).expand();
+    let grid = Grid::new(&data);
+
+    let (empty_rows, empty_cols) = grid.expand();
 
     let galaxies = grid.galaxies();
     let mut sum = 0;
@@ -111,9 +113,25 @@ fn main() {
         for j in (i + 1)..galaxies.len() {
             let a = &galaxies[i];
             let b = &galaxies[j];
-            let dist = (a.row as i64 - b.row as i64).abs() +
-                (a.col as i64 - b.col as i64).abs();
-            sum += dist as usize;
+
+            let empty_rows_crossed = empty_rows
+                .iter()
+                .filter(|&&empty_row| (a.row < empty_row && b.row > empty_row)
+                    || (b.row < empty_row && a.row > empty_row))
+                .count();
+
+            let empty_cols_crossed = empty_cols
+                .iter()
+                .filter(|&&empty_col| (a.col < empty_col && b.col > empty_col)
+                    || (b.col < empty_col && a.col > empty_col))
+                .count();
+
+            let expansion = 1000000;
+            let dist = (a.row as i64 - b.row as i64).abs() as usize +
+                empty_rows_crossed * (expansion - 1) +
+                (a.col as i64 - b.col as i64).abs() as usize +
+                empty_cols_crossed * (expansion - 1);
+            sum += dist;
         }
     }
     println!("{}", sum);
