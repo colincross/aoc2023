@@ -54,36 +54,42 @@ impl Line {
 }
 
 struct Dish {
-    north_lines: Vec<Line>,
+    lines: Vec<Line>,
 }
 
 impl Dish {
     fn new(s: &str) -> Self {
-        let rows = s
+        let lines = s
             .lines()
+            .map(|line| Line::new(line.chars().collect::<Vec<_>>()))
             .collect::<Vec<_>>();
-        let north_lines =
-            (0..rows[0].len())
-                .map(|col| (0..rows.len())
-                    .map(|row| rows[row].as_bytes()[col] as char)
+
+        Self { lines }.rotate()
+    }
+
+    fn rotate(&self) -> Self {
+        let lines =
+            (0..self.lines[0].line.len())
+                .map(|col| (0..self.lines.len())
+                    .map(|row| self.lines[row].line[col])
                     .collect::<Vec<_>>())
                 .map(Line::new)
                 .collect::<Vec<_>>();
 
-        Self { north_lines }
+        Self { lines }
     }
 
     fn tilt_north(&self) -> Self {
-        let north_lines = self.north_lines
+        let north_lines = self.lines
             .iter()
             .map(|line| line.tilt_toward_zero())
             .collect::<Vec<_>>();
 
-        Self { north_lines }
+        Self { lines: north_lines }
     }
 
     fn load(&self) -> usize {
-        self.north_lines
+        self.lines
             .iter()
             .map(|line| line.load())
             .sum::<usize>()
