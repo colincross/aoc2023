@@ -23,10 +23,20 @@ impl Pattern {
         Self { rows, cols }
     }
 
+    fn distance(a: &str, b: &str) -> usize {
+        let bytes_a = a.as_bytes();
+        let bytes_b = b.as_bytes();
+        (0..bytes_a.len())
+            .map(|i| (bytes_a[i] != bytes_b[i]) as usize)
+            .sum::<usize>()
+    }
+
     fn is_mirror(index: usize, list: &[String]) -> bool {
         let size = min(index + 1, list.len() - index - 1);
-        (0..size)
-            .all(|i| list[index - i] == list[index + 1 + i])
+        let distance = (0..size)
+            .map(|i| Self::distance(&list[index - i], &list[index + 1 + i]))
+            .sum::<usize>();
+        distance == 1
     }
 
     fn find_mirror_row(&self) -> Option<usize> {
