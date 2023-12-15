@@ -1,6 +1,9 @@
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::env;
 use std::fs::read_to_string;
 
+#[derive(Eq, Hash, PartialEq, Clone)]
 struct Line {
     line: Vec<char>,
 }
@@ -53,28 +56,38 @@ impl Line {
     }
 }
 
+#[derive(Eq, Hash, PartialEq, Clone)]
 struct Dish {
     lines: Vec<Line>,
 }
 
 impl Dish {
     fn new(s: &str) -> Self {
-        let lines = s
+        let rows = s
             .lines()
-            .map(|line| Line::new(line.chars().collect::<Vec<_>>()))
             .collect::<Vec<_>>();
+        let lines =
+            (0..rows[0].len())
+                .map(|col| (0..rows.len())
+                    .map(|row| rows[row].as_bytes()[col] as char)
+                    .collect::<Vec<_>>())
+                .map(Line::new)
+                .collect::<Vec<_>>();
 
-        Self { lines }.rotate()
+        Self { lines }
     }
 
     fn rotate(&self) -> Self {
-        let lines =
-            (0..self.lines[0].line.len())
-                .map(|col| (0..self.lines.len())
+        let rows = self.lines.len();
+        let cols = self.lines[0].line.len();
+        let mut lines =
+            (0..cols)
+                .map(|col| (0..rows)
                     .map(|row| self.lines[row].line[col])
                     .collect::<Vec<_>>())
                 .map(Line::new)
                 .collect::<Vec<_>>();
+        lines.reverse();
 
         Self { lines }
     }
@@ -88,11 +101,34 @@ impl Dish {
         Self { lines: north_lines }
     }
 
+    fn spin_cycle(&self) -> Self {
+        self
+            .tilt_north()
+            .rotate()
+            .tilt_north()
+            .rotate()
+            .tilt_north()
+            .rotate()
+            .tilt_north()
+            .rotate()
+    }
+
     fn load(&self) -> usize {
         self.lines
             .iter()
             .map(|line| line.load())
             .sum::<usize>()
+    }
+
+    fn to_string(&self) -> String {
+        self
+            .rotate()
+            .lines
+            .iter()
+            .rev()
+            .map(|line| line.line.iter().collect::<String>())
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 }
 
@@ -101,7 +137,32 @@ fn main() {
     let filename = args[1].as_str();
     let data = read_to_string(&filename).unwrap();
 
-    let dish = Dish::new(&data);
-    let tilted_dish = dish.tilt_north();
-    println!("{}", tilted_dish.load());
+    let mut dish = Dish::new(&data);
+
+    let mut seen: HashMap<Dish, usize> = HashMap::new();
+    let mut count = 0;
+
+    loop {
+        let entry = seen.entry(dish.clone());
+        match entry {
+            Entry::Occupied(_entry) => break,
+            Entry::Vacant(entry) => entry.insert(count),
+        };
+        dish = dish.spin_cycle();
+        count += 1;
+    }
+
+    const CYCLES: usize = 1000000000;
+    let loop_len = count - seen.get(&dish).unwrap();
+    let remain = (CYCLES - count) % loop_len;
+
+    for _i in 0..remain {
+        dish = dish.spin_cycle();
+    }
+    println!("{}", dish.load());
 }
+
+//         V<-
+//       * * *
+//       0 1 2
+//         3 4
