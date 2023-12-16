@@ -24,6 +24,8 @@ struct Pos {
 
 struct Grid {
     grid: Vec<Vec<char>>,
+    rows: usize,
+    cols: usize,
 }
 
 impl Grid {
@@ -32,7 +34,9 @@ impl Grid {
             .lines()
             .map(|s| s.chars().collect::<Vec<_>>())
             .collect::<Vec<_>>();
-        Self { grid }
+        let rows = grid.len();
+        let cols = grid[0].len();
+        Self { grid, rows, cols }
     }
 
     fn at(&self, pos: &Pos) -> char {
@@ -44,8 +48,8 @@ impl Grid {
         let row = (pos.row as i32) + dir.row;
         let col = (pos.col as i32) + dir.col;
         if row < 0 || col < 0
-            || row as usize >= self.grid.len()
-            || col as usize >= self.grid[0].len() {
+            || row as usize >= self.rows
+            || col as usize >= self.cols {
             None
         } else {
             Some(Pos { row: row as usize, col: col as usize })
@@ -96,6 +100,33 @@ impl Grid {
             }
         }
     }
+
+    fn count_energized(&self, pos: &Pos, dir: &Dir) -> usize {
+        let mut energized = vec![vec!['.'; self.cols]; self.rows];
+
+        let mut seen = HashMap::<(Pos, Dir), ()>::new();
+        self.walk(pos, dir, &mut seen,
+                  &mut |pos: &Pos| energized[pos.row][pos.col] = '#');
+
+
+        energized
+            .iter()
+            .map(|row| row.iter().filter(|&&c| c == '#').count())
+            .sum::<usize>()
+    }
+
+    fn starting_positions(&self) -> Vec<(Pos, Dir)> {
+        let left = (0..self.rows)
+            .map(|row| (Pos { row: row, col: 0 }, Dir::RIGHT));
+        let right = (0..self.rows)
+            .map(|row| (Pos { row: row, col: self.cols - 1 }, Dir::LEFT));
+        let top = (0..self.cols)
+            .map(|col| (Pos { row: 0, col: col }, Dir::DOWN));
+        let bottom = (0..self.cols)
+            .map(|col| (Pos { row: self.rows - 1, col: col }, Dir::UP));
+
+        left.chain(right).chain(top).chain(bottom).collect()
+    }
 }
 
 fn main() {
@@ -105,18 +136,11 @@ fn main() {
 
     let grid = Grid::new(&data);
 
-    let mut energized = vec![vec!['.'; grid.grid[0].len()]; grid.grid.len()];
-
-    let mut seen = HashMap::<(Pos, Dir), ()>::new();
-    grid.walk(&Pos::default(), &Dir::RIGHT, &mut seen,
-              &mut |pos: &Pos| energized[pos.row][pos.col] = '#');
-
-    for e in &energized {
-        println!("{}", e.iter().collect::<String>());
-    }
-
-    println!("{}", energized
-        .iter()
-        .map(|row| row.iter().filter(|&&c| c == '#').count())
-        .sum::<usize>());
+    println!("{}",
+             grid
+                 .starting_positions()
+                 .iter()
+                 .map(|(pos, dir)| grid.count_energized(pos, dir))
+                 .max()
+                 .unwrap())
 }
