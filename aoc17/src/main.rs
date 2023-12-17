@@ -3,7 +3,7 @@ use std::fs::read_to_string;
 
 use pathfinding::prelude::astar;
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Dir {
     row: i32,
     col: i32,
@@ -14,6 +14,7 @@ impl Dir {
     const RIGHT: Dir = Dir { row: 0, col: 1 };
     const UP: Dir = Dir { row: -1, col: 0 };
     const DOWN: Dir = Dir { row: 1, col: 0 };
+    const NONE: Dir = Dir { row: 0, col: 0 };
 
     const ALL: [Dir; 4] = [Self::LEFT, Self::RIGHT, Self::UP, Self::DOWN];
 
@@ -22,13 +23,13 @@ impl Dir {
     }
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Pos {
     row: usize,
     col: usize,
 }
 
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct PosWithDirs {
     pos: Pos,
     last_dir: Dir,
@@ -67,7 +68,14 @@ impl Grid {
                 continue;
             }
 
-            if dir == pos_with_dirs.last_dir && pos_with_dirs.last_dir_count == 3 {
+            if pos_with_dirs.last_dir != Dir::NONE
+                && dir != pos_with_dirs.last_dir
+                && pos_with_dirs.last_dir_count < 4 {
+                continue;
+            }
+
+            if dir == pos_with_dirs.last_dir
+                && pos_with_dirs.last_dir_count >= 10 {
                 continue;
             }
 
@@ -94,14 +102,7 @@ impl Grid {
     }
 
     fn find_min_value(&self) -> usize {
-        let start = PosWithDirs {
-            pos: Pos {
-                row: 0,
-                col: 0,
-            },
-            last_dir: Dir::RIGHT,
-            last_dir_count: 1,
-        };
+        let start = PosWithDirs::default();
         let goal = Pos {
             row: self.rows - 1,
             col: self.cols - 1,
@@ -109,7 +110,7 @@ impl Grid {
         let result = astar(&start,
                            |p| self.successors(p),
                            |p| self.distance_to_goal(&p.pos),
-                           |p| p.pos == goal)
+                           |p| p.pos == goal && p.last_dir_count >= 4)
             .unwrap();
 
         self.print_path(&result.0);
