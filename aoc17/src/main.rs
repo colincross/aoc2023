@@ -85,8 +85,7 @@ impl Grid {
             } else {
                 1
             };
-            if new_pos.is_some() {
-                let pos = new_pos.unwrap();
+            if let Some(pos) = new_pos {
                 let weight = self.at(&pos);
                 let new_pos_with_dir = PosWithDirs {
                     pos: pos,
