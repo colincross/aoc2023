@@ -1,5 +1,4 @@
 use std::{env, fmt};
-use std::cmp::{max, min};
 use std::fs::read_to_string;
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -45,7 +44,6 @@ impl Dir {
             a == &Self::DOWN && b == &Self::RIGHT {
             'L'
         } else {
-            dbg!(a, b);
             panic!()
         }
     }
@@ -67,6 +65,13 @@ impl Step {
 
         Self { dir, num, color }
     }
+
+    fn from_hex(&self) -> Self {
+        let dir = vec![Dir::RIGHT, Dir::DOWN, Dir::LEFT, Dir::UP][(self.color & 0xF) as usize].clone();
+        let num = (self.color >> 4) as usize;
+        let color = self.color;
+        Self { dir, num, color }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -75,40 +80,91 @@ struct Pos {
     col: i32,
 }
 
-impl Pos {
-    fn apply(&self, step: &Step) -> Vec<Self> {
-        let mut pos = *self;
-        (0..step.num)
-            .map(|_| {
-                let row = pos.row + step.dir.row;
-                let col = pos.col + step.dir.col;
-                pos = Self { row, col };
-                pos
-            })
-            .collect()
-    }
-}
-
 struct Grid {
     grid: Vec<Vec<char>>,
     rows: usize,
     cols: usize,
-    min_pos: Pos,
+    row_quanta: Vec<i32>,
+    col_quanta: Vec<i32>,
+    row_size: Vec<usize>,
+    col_size: Vec<usize>,
 }
 
 impl Grid {
-    fn new(min_pos: &Pos, max_pos: &Pos) -> Self {
-        let rows = (max_pos.row - min_pos.row + 1) as usize;
-        let cols = (max_pos.col - min_pos.col + 1) as usize;
+    fn new(row_quanta: Vec<i32>, col_quanta: Vec<i32>) -> Self {
+        let rows = row_quanta.len();
+        let cols = col_quanta.len();
+        let mut row_size: Vec<_> = row_quanta
+            .windows(2)
+            .map(|rows: &[i32]| (rows[1] - rows[0]) as usize)
+            .collect();
+        row_size.push(1);
+        let mut col_size: Vec<_> = col_quanta
+            .windows(2)
+            .map(|cols: &[i32]| (cols[1] - cols[0]) as usize)
+            .collect();
+        col_size.push(1);
+
         let grid = vec![vec!['.'; cols]; rows];
-        let min_pos = *min_pos;
-        Self { rows, cols, grid, min_pos }
+        Self { rows, cols, grid, row_quanta, col_quanta, row_size, col_size }
     }
 
     fn at(&mut self, pos: &Pos) -> &mut char {
-        &mut self.grid
-            [(pos.row - self.min_pos.row) as usize]
-            [(pos.col - self.min_pos.col) as usize]
+        let row_index = self.row_quanta.iter().position(|&x| x == pos.row).expect("row quanta not found");
+        let col_index = self.col_quanta.iter().position(|&x| x == pos.col).expect("col quanta not found");
+        &mut self.grid[row_index][col_index]
+    }
+
+    fn step_to_pos_list(&self, pos: &Pos, step: &Step) -> Vec<Pos> {
+        match step.dir {
+            Dir::LEFT => {
+                let start_col = pos.col;
+                let end_col = pos.col - (step.num as i32);
+                let mut pos_list = self
+                    .col_quanta
+                    .iter()
+                    .filter(|&&col| col < start_col && col >= end_col)
+                    .map(|&col| Pos { row: pos.row, col: col })
+                    .collect::<Vec<_>>();
+                pos_list.reverse();
+                pos_list
+            }
+            Dir::RIGHT => {
+                let start_col = pos.col;
+                let end_col = pos.col + (step.num as i32);
+                let mut pos_list = self
+                    .col_quanta
+                    .iter()
+                    .filter(|&&col| col > start_col && col <= end_col)
+                    .map(|&col| Pos { row: pos.row, col: col })
+                    .collect::<Vec<_>>();
+                pos_list
+            }
+            Dir::UP => {
+                let start_row = pos.row;
+                let end_row = pos.row - (step.num as i32);
+                let mut pos_list = self
+                    .row_quanta
+                    .iter()
+                    .filter(|&&row| row < start_row && row >= end_row)
+                    .map(|&row| Pos { col: pos.col, row: row })
+                    .collect::<Vec<_>>();
+                pos_list.reverse();
+                pos_list
+            }
+            Dir::DOWN => {
+                let start_row = pos.row;
+                let end_row = pos.row + (step.num as i32);
+                let mut pos_list = self
+                    .row_quanta
+                    .iter()
+                    .filter(|&&row| row > start_row && row <= end_row)
+                    .map(|&row| Pos { col: pos.col, row: row })
+                    .collect::<Vec<_>>();
+                pos_list
+            }
+            _ => panic!(),
+        }
     }
 
     fn apply(&mut self, steps: &[Step]) {
@@ -118,7 +174,7 @@ impl Grid {
             if dir != Dir::NONE {
                 *self.at(&pos) = Dir::corner(&dir, &step.dir)
             }
-            let pos_list = pos.apply(step);
+            let pos_list = self.step_to_pos_list(&pos, step);
             for p in &pos_list {
                 if step.dir == Dir::UP || step.dir == Dir::DOWN {
                     *self.at(p) = '|';
@@ -137,52 +193,54 @@ impl Grid {
         steps
             .iter()
             .map(|step| {
-                pos = *pos.apply(step).last().unwrap();
+                pos = Pos {
+                    row: pos.row + step.dir.row * (step.num as i32),
+                    col: pos.col + step.dir.col * (step.num as i32),
+                };
                 pos
             })
             .collect()
     }
+
     fn from(steps: &[Step]) -> Self {
         let pos_list = Self::steps_to_pos_list(steps);
 
-        let max_pos = pos_list
+        let mut row_quanta: Vec<_> = pos_list
             .iter()
-            .fold(Pos { row: 0, col: 0 },
-                  |max_pos, pos| {
-                      Pos {
-                          row: max(pos.row, max_pos.row),
-                          col: max(pos.col, max_pos.col),
-                      }
-                  });
-        let min_pos = pos_list
-            .iter()
-            .fold(Pos { row: 0, col: 0 },
-                  |min_pos, pos| {
-                      Pos {
-                          row: min(pos.row, min_pos.row),
-                          col: min(pos.col, min_pos.col),
-                      }
-                  });
+            .map(|pos| vec![pos.row - 1, pos.row, pos.row + 1])
+            .flatten()
+            .collect();
+        row_quanta.sort();
+        row_quanta.dedup();
 
-        let mut grid = Self::new(&min_pos, &max_pos);
+        let mut col_quanta: Vec<_> = pos_list
+            .iter()
+            .map(|pos| vec![pos.col - 1, pos.col, pos.col + 1])
+            .flatten()
+            .collect();
+        col_quanta.sort();
+        col_quanta.dedup();
+
+        let mut grid = Self::new(row_quanta, col_quanta);
         grid.apply(&steps);
         grid
     }
 
     fn count(&self) -> usize {
         let mut count = 0;
-        for row in &self.grid {
+        for row in 0..self.grid.len() {
             let mut last_corner = '.';
             let mut inside = false;
             let mut row_count = 0;
-            for &c in row {
+            for col in 0..self.grid[row].len() {
+                let c = self.grid[row][col];
                 let is_floor = c == '.';
                 if is_floor {
                     if inside {
-                        row_count += 1;
+                        row_count += self.row_size[row] * self.col_size[col];
                     }
                 } else {
-                    row_count += 1;
+                    row_count += self.row_size[row] * self.col_size[col];
                     if c == '|' {
                         inside = !inside;
                     } else if c == 'J' {
@@ -203,7 +261,7 @@ impl Grid {
                 }
             }
             count += row_count;
-            println!("{} {}", row.iter().collect::<String>(), row_count);
+            println!("{} {}", self.grid[row].iter().collect::<String>(), row_count);
         }
         count
     }
@@ -227,6 +285,7 @@ fn main() {
     let steps: Vec<Step> = data
         .lines()
         .map(Step::from)
+        .map(|step| step.from_hex())
         .collect();
 
 
