@@ -29,6 +29,16 @@ struct Part {
     ratings: HashMap<String, u32>,
 }
 
+#[derive(Clone)]
+struct RatingRange {
+    ranges: Vec<(u32, u32)>,
+}
+
+#[derive(Clone)]
+struct PartRatingRanges {
+    ratings: HashMap<String, RatingRange>,
+}
+
 impl Workflow {
     fn from(s: &str) -> Self {
         let curly_brace = s.find("{").expect("opening curly brace");
@@ -47,6 +57,25 @@ impl Workflow {
             .find(|&target| target.is_some())
             .unwrap()
             .unwrap()
+    }
+
+    fn split_recurse(rules: &[Rule], part_rating_ranges: &PartRatingRanges)
+                     -> Vec<(PartRatingRanges, String)> {
+        let mut next = Vec::<(PartRatingRanges, String)>::new();
+
+        for (next_ranges, target) in rules[0].split(part_rating_ranges) {
+            if let Some(x) = target {
+                next.push((next_ranges, x.to_string()));
+            } else {
+                next.append(&mut Self::split_recurse(&rules[1..], &next_ranges));
+            }
+        }
+        next
+    }
+
+    fn split(&self, part_rating_ranges: &PartRatingRanges)
+             -> Vec<(PartRatingRanges, String)> {
+        Self::split_recurse(&self.rules, part_rating_ranges)
     }
 }
 
@@ -73,6 +102,18 @@ impl Rule {
             Some(&self.target)
         }
     }
+
+    fn split(&self, part_rating_ranges: &PartRatingRanges)
+             -> Vec<(PartRatingRanges, Option<&str>)> {
+        if let Some(condition) = &self.condition {
+            let (true_part_rating_ranges, false_part_rating_ranges) =
+                condition.split(part_rating_ranges);
+            vec![(true_part_rating_ranges, Some(&self.target)),
+                 (false_part_rating_ranges, None)]
+        } else {
+            vec![(part_rating_ranges.clone(), Some(&self.target))]
+        }
+    }
 }
 
 impl Condition {
@@ -85,6 +126,19 @@ impl Condition {
         let rating = s[0..operator_index].to_string();
         let value = s[operator_index + 1..].parse().expect("value");
         Self { rating, operator, value }
+    }
+
+    fn split(&self, part_rating_ranges: &PartRatingRanges) -> (PartRatingRanges, PartRatingRanges) {
+        let part_ranges = &part_rating_ranges.ratings[&self.rating];
+        let (true_ranges, false_ranges) = part_ranges
+            .split(self.operator, self.value);
+
+        let mut true_part_rating_ranges = part_rating_ranges.clone();
+        (&mut true_part_rating_ranges.ratings).insert(self.rating.clone(), true_ranges);
+        let mut false_part_rating_ranges = part_rating_ranges.clone();
+        (&mut false_part_rating_ranges.ratings).insert(self.rating.clone(), false_ranges);
+
+        (true_part_rating_ranges, false_part_rating_ranges)
     }
 
     fn matches(&self, part: &Part) -> bool {
@@ -108,13 +162,20 @@ impl Workflows {
         Self { workflows }
     }
 
-    fn accepted(&self, part: &Part) -> bool {
-        let mut target = "in";
-        while target != "A" && target != "R" {
-            let workflow = &self.workflows[target];
-            target = workflow.apply(part);
+    fn accepted(&self, rating_ranges: &PartRatingRanges) -> usize {
+        let mut count = 0;
+        let mut work_list = Vec::<(PartRatingRanges, &Workflow)>::new();
+        work_list.push((PartRatingRanges::default(), &self.workflows["in"]));
+        while let Some((range, workflow)) = work_list.pop() {
+            for (next_range, target) in workflow.split(&range) {
+                if target == "A" {
+                    count += next_range.size();
+                } else if target != "R" {
+                    work_list.push((next_range, &self.workflows[&target]));
+                }
+            }
         }
-        target == "A"
+        count
     }
 }
 
@@ -135,6 +196,65 @@ impl Part {
     }
 }
 
+impl RatingRange {
+    fn split(&self, operator: char, value: u32) -> (Self, Self) {
+        let mut true_ranges = Vec::<(u32, u32)>::new();
+        let mut false_ranges = Vec::<(u32, u32)>::new();
+        if operator == '<' {
+            for range in &self.ranges {
+                if range.1 < value {
+                    true_ranges.push(*range);
+                } else if range.0 < value {
+                    true_ranges.push((range.0, value - 1));
+                    false_ranges.push((value, range.1));
+                } else {
+                    false_ranges.push(*range);
+                }
+            }
+        } else {
+            for range in &self.ranges {
+                if range.0 > value {
+                    true_ranges.push(*range);
+                } else if range.1 > value {
+                    true_ranges.push((value + 1, range.1));
+                    false_ranges.push((range.0, value));
+                } else {
+                    false_ranges.push(*range);
+                }
+            }
+        }
+        (Self { ranges: true_ranges }, Self { ranges: false_ranges })
+    }
+
+    fn default() -> Self {
+        Self { ranges: vec![(1, 4000)] }
+    }
+}
+
+impl PartRatingRanges {
+    fn default() -> Self {
+        Self {
+            ratings: HashMap::<String, RatingRange>::from(
+                [
+                    (String::from("x"), RatingRange::default()),
+                    (String::from("m"), RatingRange::default()),
+                    (String::from("a"), RatingRange::default()),
+                    (String::from("s"), RatingRange::default()),
+                ])
+        }
+    }
+
+    fn size(&self) -> usize {
+        self.ratings
+            .values()
+            .map(|ranges| ranges.ranges
+                .iter()
+                .map(|range| (range.1 - range.0 + 1) as usize)
+                .sum::<usize>())
+            .product()
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
     let filename = args[1].as_str();
@@ -148,9 +268,7 @@ fn main() {
 
     let workflows = Workflows::from(&rule_list);
 
-    println!("{}", lines
-        .map(Part::from)
-        .filter(|part| workflows.accepted(part))
-        .map(|part| part.sum_ratings())
-        .sum::<u32>());
+    let rating_ranges = PartRatingRanges::default();
+
+    println!("{}", workflows.accepted(&rating_ranges));
 }
