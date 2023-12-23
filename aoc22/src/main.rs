@@ -1,4 +1,6 @@
 use std::{env, ops};
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::fs::read_to_string;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -142,7 +144,7 @@ fn fall(bricks: &mut Vec<Brick>) {
     }
 }
 
-fn supports(bricks: &Vec<Brick>) -> Vec<(Vec<usize>)> {
+fn supports(bricks: &Vec<Brick>) -> Vec<Vec<usize>> {
     bricks
         .iter()
         .enumerate()
@@ -159,6 +161,31 @@ fn supports(bricks: &Vec<Brick>) -> Vec<(Vec<usize>)> {
             supports
         })
         .collect::<Vec<_>>()
+}
+
+fn chain_reaction(i: usize, m: &HashMap<usize, Vec<usize>>, n: &Vec<usize>) -> usize {
+    fn chain_reaction_recurse(i: usize,
+                              supports_map: &mut HashMap<usize, Vec<usize>>,
+                              num_supports: &mut Vec<usize>) {
+        let mut next = Vec::new();
+        for &j in supports_map.get(&i).unwrap_or(&vec![]) {
+            num_supports[j] -= 1;
+            if num_supports[j] == 0 {
+                next.push(j);
+            }
+        }
+        for i in next {
+            chain_reaction_recurse(i, supports_map, num_supports);
+        }
+    }
+
+    let mut num_supports = n.clone();
+    let mut supports_map = m.clone();
+    chain_reaction_recurse(i, &mut supports_map, &mut num_supports);
+    num_supports
+        .iter()
+        .filter(|&&n| n == 0)
+        .count()
 }
 
 fn main() {
@@ -178,18 +205,36 @@ fn main() {
 
     bricks.sort();
 
-
     let sup = &supports(&bricks);
 
-
-    let mut cannot_disintigrate = sup
+    let num_supports = sup
         .iter()
-        .filter(|sup| sup.len() == 1)
-        .flatten()
-        .collect::<Vec<&usize>>();
+        .zip(&bricks)
+        .map(|(supports, brick)|
+            if brick.start.z == 1 {
+                1
+            } else {
+                supports.len()
+            })
+        .collect::<Vec<_>>();
 
-    cannot_disintigrate.sort();
-    cannot_disintigrate.dedup();
+    let mut supports_map = HashMap::new();
+    for (i, supported_by_list) in sup.iter().enumerate() {
+        for &supported_by in supported_by_list {
+            match supports_map.entry(supported_by) {
+                Entry::Vacant(entry) => {
+                    entry.insert(vec![i]);
+                }
+                Entry::Occupied(mut entry) => {
+                    entry.get_mut().push(i);
+                }
+            }
+        }
+    }
 
-    println!("{}", bricks.len() - cannot_disintigrate.len());
+
+    println!("{}",
+             (0..bricks.len())
+                 .map(|i| chain_reaction(i, &supports_map, &num_supports))
+                 .sum::<usize>());
 }
