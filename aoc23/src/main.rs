@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::Entry;
 use std::env;
 use std::fs::read_to_string;
 
@@ -38,7 +40,18 @@ struct Grid {
     grid: Vec<Vec<char>>,
     rows: usize,
     cols: usize,
-    path_count: usize,
+}
+
+
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct MemoItem {
+    pos: Pos,
+    reachable: Vec<Pos>,
+}
+
+#[derive(Default)]
+struct Memo {
+    memo: HashMap<MemoItem, Option<(usize, Vec<Pos>)>>,
 }
 
 impl Grid {
@@ -51,11 +64,7 @@ impl Grid {
             .collect::<Vec<_>>();
         let rows = grid.len();
         let cols = grid[0].len();
-        let path_count = grid
-            .iter()
-            .map(|row| row.iter().filter(|&&c| c != '#').count())
-            .sum();
-        Self { grid, rows, cols, path_count }
+        Self { grid, rows, cols }
     }
 
     fn at(&self, pos: &Pos) -> char {
@@ -80,6 +89,31 @@ impl Grid {
         self.dfs_targets(pos, pos, targets, 0)
     }
 
+    fn reachable(&self, connections: &HashMap<Pos, Vec<(Pos, usize)>>, path: &Vec<Pos>, pos: &Pos) -> Vec<Pos> {
+        let mut reachable = HashSet::new();
+        self.reachable_recurse(connections, path, pos, &mut reachable);
+        let mut list = reachable.into_iter().collect::<Vec<_>>();
+        list.sort();
+        // println!("reachable from ({},{}): {}", pos.row, pos.col,
+        //          list
+        //              .iter()
+        //              .map(|pos| format!("({},{})", pos.row, pos.col))
+        //              .collect::<Vec<_>>()
+        //              .join(", "));
+        list
+    }
+
+    fn reachable_recurse(&self, connections: &HashMap<Pos, Vec<(Pos, usize)>>, path: &Vec<Pos>, pos: &Pos,
+                         reachable: &mut HashSet<Pos>) {
+        for (connection, _len) in &connections[pos] {
+            if reachable.contains(connection) || path.contains(connection) {
+                continue;
+            }
+            reachable.insert(connection.clone());
+            self.reachable_recurse(connections, path, connection, reachable)
+        }
+    }
+
     fn dfs_targets(&self, pos: &Pos, last_pos: &Pos, targets: &[Pos], len: usize) -> Vec<(Pos, usize)> {
         let mut reached = Vec::new();
         for dir in Dir::ALL {
@@ -99,47 +133,7 @@ impl Grid {
         reached
     }
 
-    fn successors(&self, pos_history: &[Pos]) -> Vec<Vec<Pos>> {
-        let mut successors = Vec::<Vec<Pos>>::new();
-        let pos = pos_history.last().expect("last");
-
-        // let forced_dir = match self.at(&pos) {
-        //     '>' => Some(Dir::RIGHT),
-        //     '<' => Some(Dir::LEFT),
-        //     '^' => Some(Dir::UP),
-        //     'v' => Some(Dir::DOWN),
-        //     '.' => None,
-        //     _ => panic!(),
-        // };
-
-        for dir in Dir::ALL {
-            // if let Some(forced_dir) = &forced_dir {
-            //     if forced_dir != &dir {
-            //         continue;
-            //     }
-            // }
-
-            if let Some(new_pos) = self.next_pos(&pos, &dir) {
-                if pos_history.last().unwrap() == &new_pos {
-                    continue;
-                }
-                if pos_history.contains(&new_pos) {
-                    continue;
-                }
-                if self.at(&new_pos) != '#' {
-                    let mut new_pos_history = pos_history.to_vec();
-                    new_pos_history.push(new_pos);
-                    successors.push(new_pos_history);
-                }
-            }
-        }
-
-        successors
-    }
-
     fn junction_count(&self, pos: &Pos) -> usize {
-        let count = 0;
-
         Dir::ALL
             .iter()
             .map(|dir| self.next_pos(pos, dir))
@@ -148,60 +142,65 @@ impl Grid {
             .count()
     }
 
-    fn dfs(&self, path: &mut Vec<Pos>) -> Vec<usize> {
+    fn dfs(&self, connections: &HashMap<Pos, Vec<(Pos, usize)>>, path: &mut Vec<Pos>, memo: &mut Memo) -> Option<(usize, Vec<Pos>)> {
         let pos = path.last().unwrap().clone();
         if pos.row == self.rows - 1 {
-            return vec![path.len()];
+            return Some((0, vec![pos.clone()]));
         }
-        let mut lengths = Vec::new();
-        for dir in Dir::ALL {
-            if let Some(new_pos) = self.next_pos(&pos, &dir) {
-                if path.last().unwrap() == &new_pos {
-                    continue;
-                }
-                if path.contains(&new_pos) {
-                    continue;
-                }
-                if self.at(&new_pos) != '#' {
-                    path.push(new_pos);
-                    lengths.append(
-                        &mut self.dfs(path));
-                    path.pop();
+
+        let memo_key = MemoItem {
+            pos: pos.clone(),
+            reachable: self.reachable(connections, path, &pos),
+        };
+        let memo_entry = memo.memo.entry(memo_key.clone());
+        if let Entry::Occupied(entry) = memo_entry {
+            return entry.get().clone();
+        }
+
+        let mut max_len = None;
+        let mut max_path = Vec::new();
+        for (connection, len) in &connections[&pos] {
+            if path.contains(connection) {
+                continue;
+            }
+            path.push(connection.clone());
+            if let Some((new_len, mut new_path)) = self.dfs(connections, path, memo) {
+                let new_path_len = new_len + len;
+                if max_len.is_none() || max_len.unwrap() < new_path_len {
+                    max_len = Some(new_path_len);
+                    new_path.push(pos.clone());
+                    max_path = new_path;
                 }
             }
+            path.pop();
         }
-        lengths
+
+
+        return if let Some(len) = max_len {
+            memo.memo.insert(memo_key, Some((len, max_path.clone())));
+            Some((len, max_path))
+        } else {
+            memo.memo.insert(memo_key, None);
+            None
+        };
     }
 
     fn find_min_value(&self) -> usize {
-        let mut path = vec![Pos { row: 0, col: 1 }];
-        path.reserve(self.path_count);
-        /*let result = astar(&start,
-                           |p| self.successors(p),
-                           |p| self.distance_to_goal(p),
-                           |p| p.last().expect("last").row == self.rows - 1)
-            .unwrap();*/
+        let junctions = self.junctions();
+        let connections = HashMap::from_iter(
+            junctions
+                .iter()
+                .map(|junction| (junction.clone(), self.connected(junction, &junctions)))
+                .collect::<Vec<_>>());
 
-        let lengths = self.dfs(&mut path);
 
-        // let paths = dfs_reach(start,
-        //                       |p| self.successors(p))
-        //     .filter(|pos_history| pos_history.last().unwrap().row == self.rows - 1);
-        // let (path, len) = paths
-        //     .map(|path| (path.clone(), path.len()))
-        //     .max_by(|(_, len1), (_, len2)| len1.cmp(len2))
-        //     .unwrap();
-        // // for (i, path) in paths.enumerate() {
-        // //     println!("{}", i);
-        // //     self.print_path(&path);
-        // // }
-        //
-        // self.print_path(&path);
-        // len - 1
+        let mut path = Vec::with_capacity(junctions.len());
+        path.push(Pos { row: 0, col: 1 });
 
-        //paths.map(|path| path.len()).max().unwrap()
+        let (length, path) = self.dfs(&connections, &mut path, &mut Memo::default()).expect("length");
 
-        *lengths.iter().max().unwrap() - 1
+        println!("{}", path.iter().rev().map(|pos| format!("({},{})", pos.row, pos.col)).collect::<Vec<_>>().join(" -> "));
+        length
     }
 
     fn next_pos(&self, pos: &Pos, dir: &Dir) -> Option<Pos> {
@@ -215,34 +214,6 @@ impl Grid {
             Some(Pos { row: row as usize, col: col as usize })
         }
     }
-
-    fn distance_to_goal(&self, pos_history: &[Pos]) -> isize {
-        let d = (0 as isize).checked_sub_unsigned(
-            self.path_count + pos_history.len())
-            .unwrap();
-        println!("{} {}", pos_history.len(), d);
-        d
-    }
-
-    fn print_path(&self, path: &[Pos]) {
-        let mut grid = vec![vec!['.'; self.cols]; self.rows];
-        let len = path.len();
-        for (i, pos) in path.iter().enumerate() {
-            grid[pos.row][pos.col] = if i == 0 {
-                'S'
-            } else if i == len - 1 {
-                'F'
-            } else {
-                'O'
-            };
-        }
-
-        println!("\n{}", grid
-            .iter()
-            .map(|row| row.iter().collect::<String>())
-            .collect::<Vec<_>>()
-            .join("\n"));
-    }
 }
 
 fn main() {
@@ -252,24 +223,5 @@ fn main() {
 
     let grid = Grid::new(&data);
 
-    let mut junctions = grid.junctions();
-    //println!("junctions: {}", junctions.len());
-    println!("graph name {{");
-    for (i, junction) in junctions.iter().enumerate() {
-        println!("j{} [label=\"({}, {})\"];", i, junction.row, junction.col);
-    }
-
-    for (i, junction) in junctions.iter().enumerate() {
-        for (connected, len) in grid.connected(junction, &junctions) {
-            if &connected > junction {
-                println!("j{} -- j{} [label=\"{}\"];",
-                         i,
-                         junctions.iter().position(|junction| &connected == junction).unwrap(),
-                         len);
-            }
-        }
-    }
-    println!("}}");
-
-    //println!("{}", grid.find_min_value());
+    println!("{}", grid.find_min_value());
 }
