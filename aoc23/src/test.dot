@@ -1,0 +1,23 @@
+graph name {
+j0 [label="(0, 1)"];
+j1 [label="(3, 11)"];
+j2 [label="(5, 3)"];
+j3 [label="(11, 21)"];
+j4 [label="(13, 5)"];
+j5 [label="(13, 13)"];
+j6 [label="(19, 13)"];
+j7 [label="(19, 19)"];
+j8 [label="(22, 21)"];
+j0 -- j2 [label="15"];
+j1 -- j2 [label="22"];
+j1 -- j3 [label="30"];
+j1 -- j5 [label="24"];
+j2 -- j4 [label="22"];
+j3 -- j5 [label="18"];
+j3 -- j7 [label="10"];
+j4 -- j5 [label="12"];
+j4 -- j6 [label="38"];
+j5 -- j6 [label="10"];
+j6 -- j7 [label="10"];
+j7 -- j8 [label="5"];
+}

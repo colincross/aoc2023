@@ -1,8 +1,6 @@
 use std::env;
 use std::fs::read_to_string;
 
-use pathfinding::prelude::dfs_reach;
-
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct Dir {
     row: i32,
@@ -64,27 +62,67 @@ impl Grid {
         self.grid[pos.row][pos.col]
     }
 
+    fn iter(&self) -> impl Iterator<Item=Pos> + '_ {
+        (0..self.rows)
+            .map(move |row| (0..self.cols)
+                .map(move |col| Pos { row, col }))
+            .flatten()
+    }
+
+    fn junctions(&self) -> Vec<Pos> {
+        self.iter()
+            .filter(|pos| self.at(pos) != '#')
+            .filter(|pos| self.junction_count(pos) > 2 || pos.row == 0 || pos.row == self.rows - 1)
+            .collect()
+    }
+
+    fn connected(&self, pos: &Pos, targets: &[Pos]) -> Vec<(Pos, usize)> {
+        self.dfs_targets(pos, pos, targets, 0)
+    }
+
+    fn dfs_targets(&self, pos: &Pos, last_pos: &Pos, targets: &[Pos], len: usize) -> Vec<(Pos, usize)> {
+        let mut reached = Vec::new();
+        for dir in Dir::ALL {
+            if let Some(new_pos) = self.next_pos(&pos, &dir) {
+                if &new_pos == last_pos {
+                    continue;
+                }
+                if self.at(&new_pos) != '#' {
+                    if targets.contains(&new_pos) {
+                        return vec![(new_pos, len + 1)];
+                    }
+                    reached.append(
+                        &mut self.dfs_targets(&new_pos, pos, targets, len + 1));
+                }
+            }
+        }
+        reached
+    }
+
     fn successors(&self, pos_history: &[Pos]) -> Vec<Vec<Pos>> {
         let mut successors = Vec::<Vec<Pos>>::new();
         let pos = pos_history.last().expect("last");
 
-        let forced_dir = match self.at(&pos) {
-            '>' => Some(Dir::RIGHT),
-            '<' => Some(Dir::LEFT),
-            '^' => Some(Dir::UP),
-            'v' => Some(Dir::DOWN),
-            '.' => None,
-            _ => panic!(),
-        };
+        // let forced_dir = match self.at(&pos) {
+        //     '>' => Some(Dir::RIGHT),
+        //     '<' => Some(Dir::LEFT),
+        //     '^' => Some(Dir::UP),
+        //     'v' => Some(Dir::DOWN),
+        //     '.' => None,
+        //     _ => panic!(),
+        // };
 
         for dir in Dir::ALL {
-            if let Some(forced_dir) = &forced_dir {
-                if forced_dir != &dir {
-                    continue;
-                }
-            }
+            // if let Some(forced_dir) = &forced_dir {
+            //     if forced_dir != &dir {
+            //         continue;
+            //     }
+            // }
 
             if let Some(new_pos) = self.next_pos(&pos, &dir) {
+                if pos_history.last().unwrap() == &new_pos {
+                    continue;
+                }
                 if pos_history.contains(&new_pos) {
                     continue;
                 }
@@ -99,29 +137,71 @@ impl Grid {
         successors
     }
 
+    fn junction_count(&self, pos: &Pos) -> usize {
+        let count = 0;
+
+        Dir::ALL
+            .iter()
+            .map(|dir| self.next_pos(pos, dir))
+            .flatten()
+            .filter(|pos| self.at(pos) != '#')
+            .count()
+    }
+
+    fn dfs(&self, path: &mut Vec<Pos>) -> Vec<usize> {
+        let pos = path.last().unwrap().clone();
+        if pos.row == self.rows - 1 {
+            return vec![path.len()];
+        }
+        let mut lengths = Vec::new();
+        for dir in Dir::ALL {
+            if let Some(new_pos) = self.next_pos(&pos, &dir) {
+                if path.last().unwrap() == &new_pos {
+                    continue;
+                }
+                if path.contains(&new_pos) {
+                    continue;
+                }
+                if self.at(&new_pos) != '#' {
+                    path.push(new_pos);
+                    lengths.append(
+                        &mut self.dfs(path));
+                    path.pop();
+                }
+            }
+        }
+        lengths
+    }
+
     fn find_min_value(&self) -> usize {
-        let start = vec![Pos { row: 0, col: 1 }];
+        let mut path = vec![Pos { row: 0, col: 1 }];
+        path.reserve(self.path_count);
         /*let result = astar(&start,
                            |p| self.successors(p),
                            |p| self.distance_to_goal(p),
                            |p| p.last().expect("last").row == self.rows - 1)
             .unwrap();*/
-        let paths = dfs_reach(start,
-                              |p| self.successors(p))
-            .filter(|pos_history| pos_history.last().unwrap().row == self.rows - 1);
-        let (path, len) = paths
-            .map(|path| (path.clone(), path.len()))
-            .max_by(|(_, len1), (_, len2)| len1.cmp(len2))
-            .unwrap();
-        // for (i, path) in paths.enumerate() {
-        //     println!("{}", i);
-        //     self.print_path(&path);
-        // }
 
-        self.print_path(&path);
-        len - 1
+        let lengths = self.dfs(&mut path);
+
+        // let paths = dfs_reach(start,
+        //                       |p| self.successors(p))
+        //     .filter(|pos_history| pos_history.last().unwrap().row == self.rows - 1);
+        // let (path, len) = paths
+        //     .map(|path| (path.clone(), path.len()))
+        //     .max_by(|(_, len1), (_, len2)| len1.cmp(len2))
+        //     .unwrap();
+        // // for (i, path) in paths.enumerate() {
+        // //     println!("{}", i);
+        // //     self.print_path(&path);
+        // // }
+        //
+        // self.print_path(&path);
+        // len - 1
 
         //paths.map(|path| path.len()).max().unwrap()
+
+        *lengths.iter().max().unwrap() - 1
     }
 
     fn next_pos(&self, pos: &Pos, dir: &Dir) -> Option<Pos> {
@@ -172,5 +252,24 @@ fn main() {
 
     let grid = Grid::new(&data);
 
-    println!("{}", grid.find_min_value());
+    let mut junctions = grid.junctions();
+    //println!("junctions: {}", junctions.len());
+    println!("graph name {{");
+    for (i, junction) in junctions.iter().enumerate() {
+        println!("j{} [label=\"({}, {})\"];", i, junction.row, junction.col);
+    }
+
+    for (i, junction) in junctions.iter().enumerate() {
+        for (connected, len) in grid.connected(junction, &junctions) {
+            if &connected > junction {
+                println!("j{} -- j{} [label=\"{}\"];",
+                         i,
+                         junctions.iter().position(|junction| &connected == junction).unwrap(),
+                         len);
+            }
+        }
+    }
+    println!("}}");
+
+    //println!("{}", grid.find_min_value());
 }
