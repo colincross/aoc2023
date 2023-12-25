@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::env;
 use std::fs::read_to_string;
 
@@ -63,13 +63,14 @@ impl Connection {
 #[derive(Clone)]
 struct Node {
     community: usize,
-    connections: HashSet<usize>,
+    //map of connected node number to weight
+    connections: HashMap<usize, usize>,
     degree: usize,
 }
 
 impl Node {
-    fn new(community: usize, connections: &HashSet<usize>) -> Self {
-        let degree = connections.len();
+    fn new(community: usize, connections: &HashMap<usize, usize>) -> Self {
+        let degree = connections.iter().map(|(_, weight)| weight).sum();
         Self { community, connections: connections.clone(), degree }
     }
 }
@@ -92,15 +93,15 @@ fn main() {
     names.sort();
     names.dedup();
 
-    let mut connections: Vec<HashSet<usize>>
-        = vec![HashSet::default(); names.len()];
+    let mut connections: Vec<HashMap<usize, usize>>
+        = vec![HashMap::default(); names.len()];
 
     for connection in &input {
         let from = names.iter().position(|s| s == &connection.from).unwrap();
         for to_str in &connection.to {
             let to = names.iter().position(|s| s == to_str).unwrap();
-            connections[from].insert(to);
-            connections[to].insert(from);
+            connections[from].insert(to, 1);
+            connections[to].insert(from, 1);
         }
     }
 
@@ -150,7 +151,7 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
         for i in 0..nodes.len() {
             let mut max_delta_Q = f64::MIN;
             let mut max_delta_Q_community = 0;
-            for &j in nodes[i].connections.iter() {
+            for (&j, &weight) in nodes[i].connections.iter() {
                 if nodes[i].community == nodes[j].community {
                     continue;
                 }
@@ -168,7 +169,7 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
             }
 
             if max_delta_Q > 0.0 {
-                let Q_old = Q(&nodes, m);
+                // let Q_old = Q(&nodes, m);
                 let C_old = &mut communities[nodes[i].community];
                 assert!(C_old.sum_in == sum_in(C_old, &nodes));
                 assert!(C_old.sum_tot == sum_tot(C_old, &nodes));
@@ -186,7 +187,9 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
 
                 assert!(C_new.sum_in == sum_in(C_new, &nodes));
                 assert!(C_new.sum_tot == sum_tot(C_new, &nodes));
-                let Q_new = Q(&nodes, m);
+                // let Q_new = Q(&nodes, m);
+
+                // println!("{} {}", max_delta_Q, Q_new - Q_old);
 
                 moved = true;
             }
@@ -233,9 +236,7 @@ fn Q(nodes: &[Node], m: usize) -> f64 {
             if nodes[i].community != nodes[j].community {
                 continue;
             }
-            if nodes[i].connections.contains(&j) {
-                sum += 1.0
-            }
+            sum += *nodes[i].connections.get(&j).unwrap_or(&(0 as usize)) as f64;
             sum -= ((nodes[i].degree * nodes[j].degree) as f64) / M;
         }
     }
@@ -255,15 +256,17 @@ fn sum_in(C: &Community, nodes: &[Node]) -> usize {
         .map(|&i| nodes[i]
             .connections
             .iter()
-            .filter(|&&j| nodes[i].community == nodes[j].community)
-            .count())
+            .filter(|(&j, &_weight)| nodes[i].community == nodes[j].community)
+            .map(|(&_j, &weight)| weight)
+            .sum::<usize>())
         .sum()
 }
 
 fn connections_to_community(n: &Node, C: &Community) -> usize {
     n.connections
         .iter()
-        .filter(|&connection| C.nodes.contains(connection))
-        .count()
+        .filter(|(connection, &_weight)| C.nodes.contains(connection))
+        .map(|(&_connection, &weight)| weight)
+        .sum()
 }
 
