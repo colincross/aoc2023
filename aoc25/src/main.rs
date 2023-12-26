@@ -1,10 +1,10 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs::read_to_string;
 
 // #[derive(Default)]
 // struct Nodes {
-//     strings: HashMap<String, Box<str>>,
+//     strings: BTreeMap<String, Box<str>>,
 // }
 //
 // impl Nodes {
@@ -26,7 +26,7 @@ struct Connection {
 }
 
 struct Community {
-    nodes: HashSet<usize>,
+    nodes: BTreeSet<usize>,
     sum_in: usize,
     sum_tot: usize,
 }
@@ -34,8 +34,8 @@ struct Community {
 impl Community {
     fn from(i: usize, node: &Node) -> Self {
         Self {
-            nodes: HashSet::from([i]),
-            sum_in: 0,
+            nodes: BTreeSet::from([i]),
+            sum_in: node.connections.get(&node.index).cloned().unwrap_or_default(),
             sum_tot: node.degree,
         }
     }
@@ -60,18 +60,20 @@ impl Connection {
 }
 
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Node {
+    index: usize,
     community: usize,
     //map of connected node number to weight
-    connections: HashMap<usize, usize>,
+    connections: BTreeMap<usize, usize>,
     degree: usize,
 }
 
 impl Node {
-    fn new(community: usize, connections: &HashMap<usize, usize>) -> Self {
+    fn new(index: usize, connections: &BTreeMap<usize, usize>) -> Self {
         let degree = connections.iter().map(|(_, weight)| weight).sum();
-        Self { community, connections: connections.clone(), degree }
+        let community = index;
+        Self { index, community, connections: connections.clone(), degree }
     }
 }
 
@@ -91,10 +93,11 @@ fn main() {
         .flatten()
         .collect::<Vec<_>>();
     names.sort();
+    //names.sort_by_key(|name| name.parse::<u32>().unwrap());
     names.dedup();
 
-    let mut connections: Vec<HashMap<usize, usize>>
-        = vec![HashMap::default(); names.len()];
+    let mut connections: Vec<BTreeMap<usize, usize>>
+        = vec![BTreeMap::default(); names.len()];
 
     for connection in &input {
         let from = names.iter().position(|s| s == &connection.from).unwrap();
@@ -105,11 +108,21 @@ fn main() {
         }
     }
 
-    let nodes: Vec<_> = (0..names.len())
+    let mut nodes: Vec<_> = (0..names.len())
         .map(|i| Node::new(i, &connections[i]))
         .collect();
 
-    louvain_pass(&nodes);
+    for i in 0.. {
+        //println!("Pass {} nodes {}", i, nodes.len());
+        let len = nodes.len();
+        nodes = louvain_pass(&nodes);
+        print_dot(&nodes);
+        if nodes.len() == len {
+            break;
+        }
+    }
+
+    print_dot(&nodes);
 
     // for (i, community) in communities.iter().enumerate() {
     //     if community.nodes.len() > 0 {
@@ -119,14 +132,6 @@ fn main() {
 
     // Louvain method
 
-
-    // println!("graph name {{");
-    // for connection in &connections {
-    //     for to in &connection.to {
-    //         println!("{} -- {}", connection.from, to);
-    //     }
-    // }
-    // println!("}}");
 
     // bbz ->
     // mxd ->
@@ -143,7 +148,7 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
     let m = nodes
         .iter()
         .map(|node| node.degree)
-        .sum::<usize>() / 2;
+        .sum::<usize>();
 
     let mut moved = true;
     while moved {
@@ -169,7 +174,7 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
             }
 
             if max_delta_Q > 0.0 {
-                // let Q_old = Q(&nodes, m);
+                let Q_old = Q(&nodes, m);
                 let C_old = &mut communities[nodes[i].community];
                 assert!(C_old.sum_in == sum_in(C_old, &nodes));
                 assert!(C_old.sum_tot == sum_tot(C_old, &nodes));
@@ -187,9 +192,9 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
 
                 assert!(C_new.sum_in == sum_in(C_new, &nodes));
                 assert!(C_new.sum_tot == sum_tot(C_new, &nodes));
-                // let Q_new = Q(&nodes, m);
+                let Q_new = Q(&nodes, m);
 
-                // println!("{} {}", max_delta_Q, Q_new - Q_old);
+                println!("{} {}", max_delta_Q, Q_new - Q_old);
 
                 moved = true;
             }
@@ -200,7 +205,8 @@ fn louvain_pass(n: &[Node]) -> Vec<Node> {
             // }
         }
     }
-    nodes
+
+    communities_to_nodes(&mut communities, &nodes)
 }
 
 fn delta_Q(i: &Node, C_out: &Community, C_in: &Community, m: usize) -> f64 {
@@ -236,7 +242,7 @@ fn Q(nodes: &[Node], m: usize) -> f64 {
             if nodes[i].community != nodes[j].community {
                 continue;
             }
-            sum += *nodes[i].connections.get(&j).unwrap_or(&(0 as usize)) as f64;
+            sum += nodes[i].connections.get(&j).cloned().unwrap_or_default() as f64;
             sum -= ((nodes[i].degree * nodes[j].degree) as f64) / M;
         }
     }
@@ -270,3 +276,75 @@ fn connections_to_community(n: &Node, C: &Community) -> usize {
         .sum()
 }
 
+fn communities_to_nodes(communities: &[Community], nodes: &[Node]) -> Vec<Node> {
+    for (n, i) in communities
+        .iter()
+        .enumerate()
+        .filter(|&(_i, community)| !community.nodes.is_empty())
+        .map(|(i, _community)| i)
+        .enumerate() {
+        let community = &communities[i];
+        if community.nodes.len() == 0 {
+            continue;
+        }
+        println!("{}: {}", n, community.nodes.iter().map(|node| node.to_string()).collect::<Vec<_>>().join(" "));
+    }
+
+    let community_to_new_node_map = BTreeMap::<usize, usize>::from_iter(
+        communities
+            .iter()
+            .enumerate()
+            .filter(|&(_i, community)| !community.nodes.is_empty())
+            .map(|(i, _community)| i)
+            .enumerate()
+            .map(|(n, i)| (i, n)));
+
+    let new_node_to_community_map = BTreeMap::<usize, usize>::from_iter(
+        community_to_new_node_map
+            .iter()
+            .map(|(&i, &n)| (n, i)));
+
+    let mut new_nodes = vec![Node::default(); new_node_to_community_map.len()];
+
+    for i in 0..new_nodes.len() {
+        let c = new_node_to_community_map[&i];
+        let community = &communities[c];
+        for &old_node in &community.nodes {
+            for (&old_node_connection, &weight) in &nodes[old_node].connections {
+                let old_community = nodes[old_node_connection].community;
+                let new_connection = community_to_new_node_map[&old_community];
+                *new_nodes[i].connections.entry(new_connection).or_default() += weight;
+                new_nodes[i].degree += weight;
+                new_nodes[i].community = i;
+                // if new_connection == c {
+                //     *new_nodes[i].connections.entry(new_connection).or_default() += weight;
+                //     new_nodes[i].degree += weight;
+                // }
+            }
+        }
+    }
+
+    for (i, new_node) in new_nodes.iter_mut().enumerate() {
+        if let Some(self_weight) = new_node.connections.get_mut(&i) {
+            // *self_weight /= 2;
+            // new_node.degree -= *self_weight;
+        }
+    }
+
+    new_nodes
+}
+
+fn print_dot(nodes: &[Node]) {
+    let mut seen = BTreeSet::new();
+    println!("graph name {{");
+    for (from, node) in nodes.iter().enumerate() {
+        println!("{} [label=\"{}\"]", from, node.degree);
+        for (&to, weight) in &node.connections {
+            if !seen.contains(&to) {
+                println!("{} -- {} [label=\"{}\"]", from, to, weight);
+            }
+        }
+        seen.insert(from);
+    }
+    println!("}}");
+}
